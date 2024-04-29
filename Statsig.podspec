@@ -1,7 +1,7 @@
 Pod::Spec.new do |spec|
 
   spec.name         = "Statsig"
-  spec.version      = "1.39.1"
+  spec.version      = "1.40.0"
   spec.summary      = "Statsig enables developers to ship code faster and more safely."
   spec.description  = <<-DESC
                    Statsig enables developers to ship code faster and more safely by providing:
@@ -25,6 +25,7 @@ Pod::Spec.new do |spec|
 
   spec.source       = { :git => "https://github.com/statsig-io/ios-sdk.git", :tag => "#{spec.version}" }
   spec.source_files  = "Sources/Statsig/**/*.swift"
+  spec.resource_bundles  = {"Statsig" => ["PrivacyInfo.xcprivacy"]}
   spec.default_subspec = 'StatsigInternalObjC'
 
   spec.swift_version = '5.0'

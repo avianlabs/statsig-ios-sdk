@@ -119,12 +119,12 @@ public class StatsigClient {
      - user: The new user
      - completion: A callback block called when the new values have been received. May be called with an error message string if the fetch fails.
      */
-    public func updateUser(_ user: StatsigUser, completion: completionBlock = nil) {
+    public func updateUser(_ user: StatsigUser, values: [String: Any]? = nil, completion: completionBlock = nil) {
         exposureDedupeQueue.async(flags: .barrier) { [weak self] in
             self?.loggedExposures.removeAll()
         }
 
-        self.updateUserImpl(user, completion: completion)
+        self.updateUserImpl(user, values: values, completion: completion)
     }
 
     /**
@@ -249,7 +249,7 @@ extension StatsigClient {
      SeeAlso [Gate Documentation](https://docs.statsig.com/feature-gates/working-with)
      */
     public func getFeatureGateWithExposureLoggingDisabled(_ gateName: String) -> FeatureGate {
-        logger.addNonExposedCheck(gateName)
+        logger.incrementNonExposedCheck(gateName)
         let gate = store.checkGate(forName: gateName)
         if let cb = statsigOptions.evaluationCallback {
             cb(.gate(gate))
@@ -333,7 +333,7 @@ extension StatsigClient {
      SeeAlso [Dynamic Config Documentation](https://docs.statsig.com/dynamic-config)
      */
     public func getConfigWithExposureLoggingDisabled(_ configName: String) -> DynamicConfig {
-        logger.addNonExposedCheck(configName)
+        logger.incrementNonExposedCheck(configName)
         let config = store.getConfig(forName: configName)
         if let cb = statsigOptions.evaluationCallback {
             cb(.config(config))
@@ -416,7 +416,7 @@ extension StatsigClient {
      SeeAlso [Experiments Documentation](https://docs.statsig.com/experiments-plus)
      */
     public func getExperimentWithExposureLoggingDisabled(_ experimentName: String, keepDeviceValue: Bool = false) -> DynamicConfig {
-        logger.addNonExposedCheck(experimentName)
+        logger.incrementNonExposedCheck(experimentName)
         let experiment = store.getExperiment(forName: experimentName, keepDeviceValue: keepDeviceValue)
         if let cb = statsigOptions.evaluationCallback {
             cb(.experiment(experiment))
@@ -471,7 +471,7 @@ extension StatsigClient {
      SeeAlso [Layers Documentation](https://docs.statsig.com/layers)
      */
     public func getLayerWithExposureLoggingDisabled(_ layerName: String, keepDeviceValue: Bool = false) -> Layer {
-        logger.addNonExposedCheck(layerName)
+        logger.incrementNonExposedCheck(layerName)
         let layer = store.getLayer(client: nil, forName: layerName, keepDeviceValue: keepDeviceValue)
         if let cb = statsigOptions.evaluationCallback {
             cb(.layer(layer))
@@ -711,6 +711,9 @@ extension StatsigClient {
 
     private static func normalizeUser(_ user: StatsigUser?, options: StatsigOptions?) -> StatsigUser {
         var normalized = user ?? StatsigUser()
+        if let validationCallback = options?.userValidationCallback {
+            normalized = validationCallback(normalized)
+        }
         normalized.statsigEnvironment = options?.environment ?? [:]
         if let stableID = options?.overrideStableID {
             normalized.setStableID(stableID)
@@ -733,11 +736,16 @@ extension StatsigClient {
         }
     }
 
-    private func updateUserImpl(_ user: StatsigUser, completion: completionBlock = nil) {
+    private func updateUserImpl(_ user: StatsigUser, values: [String: Any]? = nil, completion: completionBlock = nil) {
         currentUser = StatsigClient.normalizeUser(user, options: statsigOptions)
-        store.updateUser(currentUser)
+        store.updateUser(currentUser, values: values)
         logger.user = currentUser
-
+        
+        if values != nil {
+            completion?(nil)
+            return
+        }
+        
         DispatchQueue.main.async { [weak self] in
             self?.fetchValuesFromNetwork { [weak self, completion] error in
                 guard let self = self else {

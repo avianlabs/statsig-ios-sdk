@@ -83,15 +83,15 @@ class EventLogger {
 
     func stop() {
         flushTimer?.invalidate()
-        addNonExposedChecksEvent()
         logQueue.sync {
+            self.addNonExposedChecksEvent()
             self.flushInternal(isShuttingDown: true)
         }
     }
 
     func flush() {
-        addNonExposedChecksEvent()
         logQueue.async { [weak self] in
+            self?.addNonExposedChecksEvent()
             self?.flushInternal()
         }
     }
@@ -118,27 +118,49 @@ class EventLogger {
 
             if let errorMessage = errorMessage, !self.loggedErrorMessage.contains(errorMessage) {
                 self.loggedErrorMessage.insert(errorMessage)
-                self.log(Event.statsigInternalEvent(user: self.user, name: "log_event_failed", value: nil,
-                                                    metadata: ["error": errorMessage]))
+                self.log(Event.statsigInternalEvent(
+                    user: self.user,
+                    name: "log_event_failed",
+                    value: nil,
+                    metadata: ["error": errorMessage])
+                )
             }
         }
     }
 
-    func addNonExposedCheck(_ configName: String) {
-        let count = nonExposedChecks[configName] ?? 0
-        nonExposedChecks[configName] = count + 1
+    func incrementNonExposedCheck(_ configName: String) {
+        logQueue.async { [weak self] in
+            guard let self = self else {
+                return
+            }
+
+            let count = self.nonExposedChecks[configName] ?? 0
+            self.nonExposedChecks[configName] = count + 1
+        }
     }
 
     func addNonExposedChecksEvent() {
         if (self.nonExposedChecks.isEmpty) {
             return
         }
-        let json = try? JSONSerialization.data(withJSONObject: nonExposedChecks)
-        let jsonString = String(data: json!, encoding: .ascii)
-        if jsonString != nil {
-            self.events.append(Event.statsigInternalEvent(user: nil, name: EventLogger.nonExposedChecksEvent, value: nil,
-                                           metadata: ["checks": jsonString!]))
+
+        guard JSONSerialization.isValidJSONObject(nonExposedChecks),
+              let data = try? JSONSerialization.data(withJSONObject: nonExposedChecks),
+              let json = String(data: data, encoding: .ascii)
+        else {
+            self.nonExposedChecks = [String: Int]()
+            return
         }
+
+        let event = Event.statsigInternalEvent(
+            user: nil,
+            name: EventLogger.nonExposedChecksEvent,
+            value: nil,
+            metadata: [
+                "checks": json
+            ]
+        )
+        self.events.append(event)
         self.nonExposedChecks = [String: Int]()
     }
 
